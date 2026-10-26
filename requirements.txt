@@ -1,5 +1,17 @@
 fastapi>=0.115
 uvicorn>=0.32
 pydantic>=2.9
+pydantic-settings>=2.0
 python-multipart>=0.0.12
 pytest>=8.3
+
+# Database
+sqlalchemy>=2.0
+psycopg2-binary>=2.9
+alembic>=1.13
+
+# LLM - LangChain
+langchain>=0.3.0
+langchain-google-genai>=2.0.0
+langchain-openai>=0.2.0
+langchain-anthropic>=0.3.0

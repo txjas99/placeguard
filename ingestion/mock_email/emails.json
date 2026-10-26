@@ -1,0 +1,42 @@
+[
+  {
+    "message_id": "email_001",
+    "from": "placement@college.edu",
+    "subject": "TechCorp Placement Drive - Eligibility Criteria",
+    "body": "Dear Students,\n\nWe are pleased to announce that TechCorp will be visiting our campus for placements.\n\nEligibility Criteria:\n- Minimum CGPA: 7.5\n- Branches: CSE, ISE only\n- No active backlogs allowed\n- 10th and 12th: Minimum 60% required\n\nRegistration Deadline: October 28, 2026 at 5:00 PM\n\nBest regards,\nPlacement Cell",
+    "timestamp": "2026-10-26T09:00:00",
+    "is_forwarded": false
+  },
+  {
+    "message_id": "email_002",
+    "from": "placement@college.edu",
+    "subject": "Correction: TechCorp CGPA Requirement",
+    "body": "Dear Students,\n\nCorrection to previous email:\n\nThe minimum CGPA requirement for TechCorp is 7.0 (not 7.5 as stated earlier).\n\nAll other criteria remain the same.\n\nRegards,\nPlacement Cell",
+    "timestamp": "2026-10-26T11:30:00",
+    "is_forwarded": false
+  },
+  {
+    "message_id": "email_003",
+    "from": "coordinator.cse@college.edu",
+    "subject": "DataSystems Placement - Open to All Branches",
+    "body": "Hi everyone,\n\nDataSystems is coming for placements next week.\n\nCriteria:\n- CGPA: 7.0 and above\n- Open to ALL branches\n- Maximum 2 backlogs allowed\n\nDeadline: October 30, 2026 at 4:00 PM\n\nThanks,\nDr. Kumar\nCSE Coordinator",
+    "timestamp": "2026-10-26T14:00:00",
+    "is_forwarded": false
+  },
+  {
+    "message_id": "email_004",
+    "from": "student123@college.edu",
+    "subject": "Fwd: InnovateLabs Drive Details",
+    "body": "Hi guys,\n\nSharing what I heard from seniors:\n\nInnovateLabs requirements:\n- CGPA 8.0+\n- CSE/ECE only\n- No backlogs\n- Students with existing offers cannot apply\n\n(Not official, just sharing what I know)\n\nCheers",
+    "timestamp": "2026-10-26T16:00:00",
+    "is_forwarded": true
+  },
+  {
+    "message_id": "email_005",
+    "from": "placement@college.edu",
+    "subject": "TechCorp Deadline Extended",
+    "body": "Dear Students,\n\nUpdate: The registration deadline for TechCorp has been extended to October 29, 2026 at 6:00 PM.\n\nAll other criteria remain unchanged.\n\nBest regards,\nPlacement Cell",
+    "timestamp": "2026-10-26T17:30:00",
+    "is_forwarded": false
+  }
+]
