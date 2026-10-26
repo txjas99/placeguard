@@ -143,38 +143,33 @@ def _reconcile_fact_group(facts: list[Fact]) -> Fact | None:
 def reconcile_with_coverage_fallback(
     facts: list[Fact],
 ) -> dict[RuleKey, Fact]:
-    """Reconcile facts with coverage fallback for missing rule keys.
-    
-    Extension of basic reconciliation that implements coverage fallback:
-    - Higher authority sources define the "primary" criteria
-    - Lower authority sources can fill in MISSING criteria (not override)
-    - Example: Official PDF states CGPA=7.5 but silent on branch.
-              WhatsApp states CGPA=7.0 and branch=CSE.
-              Result: CGPA=7.5 (from PDF), branch=CSE (fallback to WhatsApp)
-    
+    """Reconcile facts honoring coverage fallback for missing rule keys.
+
+    Coverage fallback (DESIGN.md §3.1 step 4): a lower-authority source may fill a
+    *coverage gap* -- a ``rule_key`` that no higher-authority source asserted --
+    but it never overrides a ``rule_key`` a higher-authority source already states.
+
+    This is inherent in per-rule-key reconciliation: each ``(drive_id,
+    criterion_type, scope)`` key is reconciled independently. A key that appears
+    only at a lower authority rank is therefore selected from that rank
+    (coverage), while a key present at a higher rank takes the higher-rank fact
+    (no override). ``TestCoverageFallback`` in the integration suite locks this in
+    (official PDF sets CGPA; WhatsApp fills in branches).
+
+    This function is a named, documented entry point so callers can express
+    coverage-fallback intent explicitly; it delegates to :func:`reconcile_facts`
+    because the standard algorithm already implements the policy. It is kept as
+    a distinct seam so drive-level coverage analysis (e.g. flagging which facts
+    relied on fallback) can be layered on later without changing call sites.
+
     Args:
         facts: List of Fact objects
-    
+
     Returns:
-        Dict mapping RuleKey to authoritative Fact with fallback coverage
+        Dict mapping RuleKey to the authoritative Fact, with lower-authority
+        facts filling any rule keys not covered by higher authority.
     """
-    # First, do standard reconciliation
-    reconciled = reconcile_facts(facts)
-    
-    # Group all facts by rule_key again
-    facts_by_key: dict[RuleKey, list[Fact]] = defaultdict(list)
-    for fact in facts:
-        key = RuleKey(fact.drive_id, fact.criterion_type, fact.scope)
-        facts_by_key[key].append(fact)
-    
-    # Check for gaps - rule keys with facts but not in reconciled
-    # (This would mean all facts were filtered out, shouldn't happen with current logic)
-    # Coverage fallback is more about DIFFERENT rule keys from lower authority sources
-    
-    # For now, return basic reconciliation
-    # Full coverage fallback would require looking at drive-level fact sets
-    # and checking which criterion_types are present at each authority level
-    return reconciled
+    return reconcile_facts(facts)
 
 
 def reconcile_facts_for_drive(

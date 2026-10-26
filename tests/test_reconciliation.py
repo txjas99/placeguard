@@ -13,6 +13,7 @@ from reconciliation.temporal_provenance_engine import (
     _reconcile_fact_group,
     get_reconciliation_trace,
     reconcile_facts,
+    reconcile_with_coverage_fallback,
 )
 
 
@@ -341,6 +342,95 @@ class TestCoverageFallback:
         
         assert result[cgpa_key].source_id == "official_pdf"
         assert result[branch_key].source_id == "whatsapp_msg"
+
+    def test_coverage_fallback_via_named_function(self):
+        """reconcile_with_coverage_fallback fills gaps without overriding (DESIGN 3.1 step 4).
+
+        Official PDF asserts min_cgpa (rank 1); placement-cell WhatsApp asserts a
+        different rule_key (allowed_branches, rank 2). The named coverage-fallback
+        entry point must keep BOTH: CGPA from the PDF (no override) and branches from
+        WhatsApp (coverage gap fill).
+        """
+        facts = [
+            Fact(
+                source_id="official_pdf",
+                source_type="official_company_pdf",
+                authority_rank=1,
+                timestamp=datetime(2026, 10, 25, 8, 0, 0),
+                effective_timestamp=datetime(2026, 10, 25, 8, 0, 0),
+                drive_id="drive_001",
+                criterion_type="min_cgpa",
+                scope="ALL",
+                operator="gte",
+                value='"7.5"',
+                is_correction=False,
+            ),
+            Fact(
+                source_id="whatsapp_msg",
+                source_type="placement_cell_whatsapp",
+                authority_rank=2,
+                timestamp=datetime(2026, 10, 26, 10, 0, 0),
+                effective_timestamp=datetime(2026, 10, 26, 10, 0, 0),
+                drive_id="drive_001",
+                criterion_type="allowed_branches",
+                scope="ALL",
+                operator="in",
+                value='"CSE,ISE"',
+                is_correction=False,
+            ),
+        ]
+
+        result = reconcile_with_coverage_fallback(facts)
+
+        assert len(result) == 2
+        cgpa_key = RuleKey("drive_001", "min_cgpa", "ALL")
+        branch_key = RuleKey("drive_001", "allowed_branches", "ALL")
+        assert result[cgpa_key].source_id == "official_pdf"     # higher authority kept
+        assert result[cgpa_key].authority_rank == 1
+        assert result[branch_key].source_id == "whatsapp_msg"  # coverage gap filled
+        assert result[branch_key].authority_rank == 2
+
+    def test_coverage_fallback_never_overrides_higher_authority(self):
+        """Lower authority asserting the SAME rule_key must not override higher authority."""
+        facts = [
+            # Official PDF: CGPA 7.5 (rank 1)
+            Fact(
+                source_id="official_pdf",
+                source_type="official_company_pdf",
+                authority_rank=1,
+                timestamp=datetime(2026, 10, 25, 8, 0, 0),
+                effective_timestamp=datetime(2026, 10, 25, 8, 0, 0),
+                drive_id="drive_001",
+                criterion_type="min_cgpa",
+                scope="ALL",
+                operator="gte",
+                value='"7.5"',
+                is_correction=False,
+            ),
+            # WhatsApp: CGPA 7.0 (rank 2, same rule_key) - must NOT override
+            Fact(
+                source_id="whatsapp_msg",
+                source_type="placement_cell_whatsapp",
+                authority_rank=2,
+                timestamp=datetime(2026, 10, 26, 10, 0, 0),
+                effective_timestamp=datetime(2026, 10, 26, 10, 0, 0),
+                drive_id="drive_001",
+                criterion_type="min_cgpa",
+                scope="ALL",
+                operator="gte",
+                value='"7.0"',
+                is_correction=False,
+            ),
+        ]
+
+        result = reconcile_with_coverage_fallback(facts)
+
+        assert len(result) == 1
+        key = RuleKey("drive_001", "min_cgpa", "ALL")
+        # Higher authority (PDF) wins - lower authority does not override
+        assert result[key].source_id == "official_pdf"
+        assert result[key].value == '"7.5"'
+        assert result[key].authority_rank == 1
 
 
 class TestMultipleConflicts:

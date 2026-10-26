@@ -9,10 +9,22 @@ Key design principles from DESIGN.md:
 
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import UTC, datetime
 
 from sqlalchemy import Boolean, DateTime, Float, Integer, String, Text
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
+
+
+def utcnow() -> datetime:
+    """Return a timezone-naive UTC timestamp, replacing the deprecated ``datetime.utcnow()``.
+
+    SQLAlchemy's default ``DateTime`` columns store naive datetimes, so we strip the
+    tzinfo to keep existing column behavior identical while avoiding the
+    ``DeprecationWarning`` emitted by ``datetime.utcnow()`` (scheduled for removal in
+    a future Python release). Use this callable for column ``default``/``onupdate``
+    and for any explicit timestamp assignment.
+    """
+    return datetime.now(UTC).replace(tzinfo=None)
 
 
 class Base(DeclarativeBase):
@@ -38,10 +50,10 @@ class Student(Base):
     
     # Metadata
     created_at: Mapped[datetime] = mapped_column(
-        DateTime, nullable=False, default=datetime.utcnow
+        DateTime, nullable=False, default=utcnow
     )
     updated_at: Mapped[datetime] = mapped_column(
-        DateTime, nullable=False, default=datetime.utcnow, onupdate=datetime.utcnow
+        DateTime, nullable=False, default=utcnow, onupdate=utcnow
     )
     
     def __repr__(self) -> str:
@@ -62,10 +74,10 @@ class Drive(Base):
     
     # Metadata
     created_at: Mapped[datetime] = mapped_column(
-        DateTime, nullable=False, default=datetime.utcnow
+        DateTime, nullable=False, default=utcnow
     )
     updated_at: Mapped[datetime] = mapped_column(
-        DateTime, nullable=False, default=datetime.utcnow, onupdate=datetime.utcnow
+        DateTime, nullable=False, default=utcnow, onupdate=utcnow
     )
     
     def __repr__(self) -> str:
@@ -121,7 +133,7 @@ class Fact(Base):
     
     # Audit trail
     extracted_at: Mapped[datetime] = mapped_column(
-        DateTime, nullable=False, default=datetime.utcnow
+        DateTime, nullable=False, default=utcnow
     )  # When LLM extraction occurred
     raw_notice_text: Mapped[str | None] = mapped_column(
         Text, nullable=True
@@ -169,7 +181,7 @@ class ExtractedCriterion(Base):
         Boolean, nullable=False, default=True, index=True
     )
     reconciled_at: Mapped[datetime] = mapped_column(
-        DateTime, nullable=False, default=datetime.utcnow
+        DateTime, nullable=False, default=utcnow
     )
     
     def __repr__(self) -> str:

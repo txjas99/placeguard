@@ -15,7 +15,7 @@ from sqlalchemy import and_, select
 from sqlalchemy.orm import Session
 
 from core.schemas import Student as StudentSchema
-from database.models import Drive, ExtractedCriterion, Fact, Student
+from database.models import Drive, ExtractedCriterion, Fact, Student, utcnow
 
 
 # ============================================================================
@@ -64,7 +64,7 @@ def update_student(
         if hasattr(db_student, key):
             setattr(db_student, key, value)
     
-    db_student.updated_at = datetime.utcnow()
+    db_student.updated_at = utcnow()
     db.commit()
     db.refresh(db_student)
     return db_student
@@ -148,7 +148,7 @@ def update_drive(
         if hasattr(db_drive, key):
             setattr(db_drive, key, value)
     
-    db_drive.updated_at = datetime.utcnow()
+    db_drive.updated_at = utcnow()
     db.commit()
     db.refresh(db_drive)
     return db_drive
@@ -276,7 +276,7 @@ def upsert_extracted_criterion(
         existing.authority_rank = authority_rank
         existing.timestamp = timestamp
         existing.is_current = True
-        existing.reconciled_at = datetime.utcnow()
+        existing.reconciled_at = utcnow()
         db.commit()
         db.refresh(existing)
         return existing

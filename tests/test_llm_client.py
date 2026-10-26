@@ -1,11 +1,11 @@
 """Tests for LLM client wrapper."""
 
 import json
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock, Mock, patch
 
 import pytest
 
-from extraction.llm_client import GeminiClient, get_llm_client
+from extraction.llm_client import LangChainClient, get_llm_client
 
 
 def test_get_llm_client_returns_gemini():
@@ -17,9 +17,10 @@ def test_get_llm_client_returns_gemini():
         mock_settings.gemini_temperature = 0.1
         mock_settings.gemini_max_retries = 3
         
-        with patch("extraction.llm_client.genai"):
+        # Patch the import inside get_llm_client
+        with patch("langchain_google_genai.ChatGoogleGenerativeAI"):
             client = get_llm_client("gemini")
-            assert isinstance(client, GeminiClient)
+            assert isinstance(client, LangChainClient)
 
 
 def test_get_llm_client_unsupported_provider():
@@ -29,143 +30,106 @@ def test_get_llm_client_unsupported_provider():
 
 
 def test_gemini_client_requires_api_key():
-    """Test GeminiClient raises error without API key."""
+    """Test get_llm_client raises error without API key."""
     with patch("extraction.llm_client.settings") as mock_settings:
+        mock_settings.llm_provider = "gemini"
         mock_settings.gemini_api_key = None
         
         with pytest.raises(ValueError, match="Gemini API key not provided"):
-            GeminiClient()
+            get_llm_client()
 
 
-@patch("extraction.llm_client.genai")
-def test_gemini_generate_text(mock_genai):
-    """Test text generation with Gemini."""
-    # Mock the API response
-    mock_response = MagicMock()
-    mock_response.text = "This is a generated response."
+def test_gemini_generate_text():
+    """Test text generation with LangChain client."""
+    # Mock the LangChain chat model
+    mock_model = Mock()
+    mock_response = Mock()
+    mock_response.content = "This is a generated response."
+    mock_model.invoke.return_value = mock_response
     
-    mock_model = MagicMock()
-    mock_model.generate_content.return_value = mock_response
-    mock_genai.GenerativeModel.return_value = mock_model
+    client = LangChainClient(model=mock_model, default_temperature=0.1)
+    result = client.generate("Test prompt")
     
-    with patch("extraction.llm_client.settings") as mock_settings:
-        mock_settings.gemini_api_key = "test_key"
-        mock_settings.gemini_model = "gemini-1.5-flash"
-        mock_settings.gemini_temperature = 0.1
-        mock_settings.gemini_max_retries = 3
-        
-        client = GeminiClient()
-        result = client.generate("Test prompt")
-        
-        assert result == "This is a generated response."
-        assert client.total_tokens_used > 0
+    assert result == "This is a generated response."
+    assert client.total_tokens_used > 0
+    assert mock_model.invoke.called
 
 
-@patch("extraction.llm_client.genai")
-def test_gemini_generate_structured(mock_genai):
-    """Test structured JSON generation with Gemini."""
-    # Mock the API response with JSON
+def test_gemini_generate_structured():
+    """Test structured JSON generation with LangChain client."""
+    # Mock the LangChain chat model
+    mock_model = Mock()
+    mock_response = Mock()
     test_json = {"name": "Test", "value": 42}
-    mock_response = MagicMock()
-    mock_response.text = json.dumps(test_json)
+    mock_response.content = json.dumps(test_json)
+    mock_model.invoke.return_value = mock_response
     
-    mock_model = MagicMock()
-    mock_model.generate_content.return_value = mock_response
-    mock_genai.GenerativeModel.return_value = mock_model
+    client = LangChainClient(model=mock_model, default_temperature=0.1)
+    result = client.generate_structured("Test prompt")
     
-    with patch("extraction.llm_client.settings") as mock_settings:
-        mock_settings.gemini_api_key = "test_key"
-        mock_settings.gemini_model = "gemini-1.5-flash"
-        mock_settings.gemini_temperature = 0.1
-        mock_settings.gemini_max_retries = 3
-        
-        client = GeminiClient()
-        result = client.generate_structured("Test prompt")
-        
-        assert result == test_json
+    assert result == test_json
 
 
-@patch("extraction.llm_client.genai")
-def test_gemini_generate_structured_with_markdown(mock_genai):
+def test_gemini_generate_structured_with_markdown():
     """Test JSON extraction from markdown code blocks."""
+    # Mock the LangChain chat model
+    mock_model = Mock()
+    mock_response = Mock()
     test_json = {"name": "Test", "value": 42}
-    mock_response = MagicMock()
-    mock_response.text = f"```json\n{json.dumps(test_json)}\n```"
+    mock_response.content = f"```json\n{json.dumps(test_json)}\n```"
+    mock_model.invoke.return_value = mock_response
     
-    mock_model = MagicMock()
-    mock_model.generate_content.return_value = mock_response
-    mock_genai.GenerativeModel.return_value = mock_model
+    client = LangChainClient(model=mock_model, default_temperature=0.1)
+    result = client.generate_structured("Test prompt")
     
-    with patch("extraction.llm_client.settings") as mock_settings:
-        mock_settings.gemini_api_key = "test_key"
-        mock_settings.gemini_model = "gemini-1.5-flash"
-        mock_settings.gemini_temperature = 0.1
-        mock_settings.gemini_max_retries = 3
-        
-        client = GeminiClient()
-        result = client.generate_structured("Test prompt")
-        
-        assert result == test_json
+    assert result == test_json
 
 
-@patch("extraction.llm_client.genai")
-def test_gemini_retry_on_failure(mock_genai):
-    """Test retry logic on API failure."""
-    # First two calls fail, third succeeds
-    mock_model = MagicMock()
-    mock_model.generate_content.side_effect = [
-        Exception("API error 1"),
-        Exception("API error 2"),
-        MagicMock(text="Success on third try"),
+def test_gemini_retry_on_failure():
+    """Test LangChain client handles API failures gracefully."""
+    # LangChain's ChatGoogleGenerativeAI has built-in retry logic via max_retries parameter
+    # This test verifies the client works when model eventually succeeds
+    mock_model = Mock()
+    mock_response = Mock()
+    mock_response.content = "Success on retry"
+    
+    # Simulate: first call fails, second succeeds
+    mock_model.invoke.side_effect = [
+        Exception("API error"),
+        mock_response,
     ]
-    mock_genai.GenerativeModel.return_value = mock_model
     
-    with patch("extraction.llm_client.settings") as mock_settings:
-        mock_settings.gemini_api_key = "test_key"
-        mock_settings.gemini_model = "gemini-1.5-flash"
-        mock_settings.gemini_temperature = 0.1
-        mock_settings.gemini_max_retries = 3
-        
-        with patch("extraction.llm_client.time.sleep"):  # Skip actual sleep
-            client = GeminiClient()
-            result = client.generate("Test prompt")
-            
-            assert result == "Success on third try"
-            assert mock_model.generate_content.call_count == 3
+    client = LangChainClient(model=mock_model, default_temperature=0.1)
+    
+    # First call should fail
+    with pytest.raises(Exception, match="API error"):
+        client.generate("Test prompt")
+    
+    # Second call should succeed
+    result = client.generate("Test prompt")
+    assert result == "Success on retry"
 
 
-@patch("extraction.llm_client.genai")
-def test_gemini_max_retries_exceeded(mock_genai):
-    """Test that exception is raised after max retries."""
-    mock_model = MagicMock()
-    mock_model.generate_content.side_effect = Exception("Persistent API error")
-    mock_genai.GenerativeModel.return_value = mock_model
+def test_gemini_max_retries_exceeded():
+    """Test that LangChain client propagates persistent failures."""
+    # LangChain's max_retries is configured at the model level
+    # Here we test the client behaves correctly when model fails
+    mock_model = Mock()
+    mock_model.invoke.side_effect = Exception("Persistent API error")
     
-    with patch("extraction.llm_client.settings") as mock_settings:
-        mock_settings.gemini_api_key = "test_key"
-        mock_settings.gemini_model = "gemini-1.5-flash"
-        mock_settings.gemini_temperature = 0.1
-        mock_settings.gemini_max_retries = 3
-        
-        with patch("extraction.llm_client.time.sleep"):
-            client = GeminiClient()
-            
-            with pytest.raises(RuntimeError, match="Gemini API failed after 3 attempts"):
-                client.generate("Test prompt")
+    client = LangChainClient(model=mock_model, default_temperature=0.1)
+    
+    with pytest.raises(Exception, match="Persistent API error"):
+        client.generate("Test prompt")
 
 
 def test_token_counting():
     """Test approximate token counting."""
-    with patch("extraction.llm_client.genai"):
-        with patch("extraction.llm_client.settings") as mock_settings:
-            mock_settings.gemini_api_key = "test_key"
-            mock_settings.gemini_model = "gemini-1.5-flash"
-            mock_settings.gemini_temperature = 0.1
-            mock_settings.gemini_max_retries = 3
-            
-            client = GeminiClient()
-            
-            # Approximate: 4 chars ≈ 1 token
-            text = "a" * 400
-            tokens = client.count_tokens(text)
-            assert tokens == 100
+    mock_model = Mock()
+    
+    client = LangChainClient(model=mock_model, default_temperature=0.1)
+    
+    # Approximate: 4 chars ≈ 1 token
+    text = "a" * 400
+    tokens = client.count_tokens(text)
+    assert tokens == 100

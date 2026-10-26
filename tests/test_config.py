@@ -8,11 +8,12 @@ from config import Settings, validate_settings
 
 def test_settings_defaults():
     """Test that settings have reasonable defaults."""
+    # Prevent .env file from being loaded by passing empty env_file
     with patch.dict("os.environ", {}, clear=True):
-        settings = Settings()
+        settings = Settings(_env_file=None)
         
         assert settings.llm_provider == "gemini"
-        assert settings.gemini_model == "gemini-1.5-flash"
+        assert settings.gemini_model == "models/gemini-1.5-flash"  # Full model path for LangChain
         assert settings.gemini_temperature == 0.1
         assert settings.jwt_algorithm == "HS256"
 

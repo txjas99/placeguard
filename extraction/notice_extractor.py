@@ -19,7 +19,7 @@ from datetime import datetime
 from typing import Any
 
 from core.schemas import SourceType, SOURCE_AUTHORITY_RANK
-from database.models import Fact as FactModel
+from database.models import Fact as FactModel, utcnow
 from extraction.llm_client import LLMClient, get_llm_client
 
 
@@ -79,6 +79,15 @@ CONTEXT:
 
 Extract all criteria following the rules provided. Return JSON array.
 """
+
+
+# Confidence levels ranked so threshold filtering can compare numerically.
+# Higher number = higher confidence. Unknown/missing confidence defaults to medium.
+CONFIDENCE_RANK: dict[str, int] = {
+    "high": 3,
+    "medium": 2,
+    "low": 1,
+}
 
 
 def extract_criteria_from_notice(
@@ -197,10 +206,15 @@ def extract_criteria_from_notice(
             value=value_str,
             is_correction=item.get("is_correction", False),
             supersedes_ref=item.get("supersedes_ref"),
-            extracted_at=datetime.utcnow(),
+            extracted_at=utcnow(),
             raw_notice_text=notice_text,
         )
-        
+        # Preserve LLM-derived metadata as transient (non-persisted) attributes so
+        # downstream consumers (e.g. extract_with_confidence) can use them without
+        # requiring a schema change to the immutable facts table.
+        fact.extraction_confidence = item.get("confidence", "high")
+        fact.extraction_notes = item.get("notes", "")
+
         facts.append(fact)
     
     return facts
@@ -215,11 +229,20 @@ def extract_with_confidence(
     min_confidence: str = "medium",
     llm_client: LLMClient | None = None,
 ) -> tuple[list[FactModel], list[dict[str, Any]]]:
-    """Extract criteria with confidence filtering.
-    
-    Returns both high-confidence facts (ready for DB) and low-confidence
-    items (for manual review).
-    
+    """Extract criteria and split them by LLM confidence.
+
+    Returns accepted facts (meeting ``min_confidence``, ready for DB) and
+    low-confidence items (below threshold, for manual review). The LLM returns a
+    per-criterion ``confidence`` field ("high" | "medium" | "low"); facts whose
+    confidence ranks at or above ``min_confidence`` are accepted, the rest are
+    returned as descriptive review dicts so an operator can decide whether to keep
+    them.
+
+    The confidence value is attached to each Fact as a transient
+    ``extraction_confidence`` attribute by :func:`extract_criteria_from_notice`
+    (it is not persisted to the immutable facts table). Items that omit a
+    confidence value default to "high".
+
     Args:
         notice_text: Raw notice text
         source_id: Message identifier
@@ -228,11 +251,13 @@ def extract_with_confidence(
         drive_id: Drive identifier
         min_confidence: Minimum confidence to accept ("high", "medium", "low")
         llm_client: Optional LLM client
-    
+
     Returns:
-        Tuple of (accepted_facts, low_confidence_items)
+        Tuple of (accepted_facts, low_confidence_items) where each low-confidence
+        item is a dict with keys: criterion_type, operator, value, scope,
+        confidence, notes, reason.
     """
-    # Extract all criteria
+    # Extract all criteria (confidence/notes attached as transient attrs)
     facts = extract_criteria_from_notice(
         notice_text=notice_text,
         source_id=source_id,
@@ -241,10 +266,33 @@ def extract_with_confidence(
         drive_id=drive_id,
         llm_client=llm_client,
     )
-    
-    # For now, return all facts as accepted (confidence filtering can be added later)
-    # This keeps the simple interface working while allowing confidence extension
-    return facts, []
+
+    threshold = CONFIDENCE_RANK.get(min_confidence, CONFIDENCE_RANK["medium"])
+
+    accepted: list[FactModel] = []
+    low_confidence_items: list[dict[str, Any]] = []
+
+    for fact in facts:
+        confidence = getattr(fact, "extraction_confidence", "high")
+        confidence_rank = CONFIDENCE_RANK.get(confidence, CONFIDENCE_RANK["medium"])
+
+        if confidence_rank >= threshold:
+            accepted.append(fact)
+        else:
+            low_confidence_items.append({
+                "criterion_type": fact.criterion_type,
+                "operator": fact.operator,
+                "value": fact.value,
+                "scope": fact.scope,
+                "confidence": confidence,
+                "notes": getattr(fact, "extraction_notes", ""),
+                "reason": (
+                    f"Extraction confidence '{confidence}' is below the "
+                    f"minimum threshold '{min_confidence}'"
+                ),
+            })
+
+    return accepted, low_confidence_items
 
 
 def detect_supersession_explicit(

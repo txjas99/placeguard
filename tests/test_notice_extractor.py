@@ -12,6 +12,7 @@ from core.schemas import SourceType
 from extraction.notice_extractor import (
     detect_supersession_explicit,
     extract_criteria_from_notice,
+    extract_with_confidence,
 )
 
 
@@ -514,3 +515,148 @@ class TestProvenanceTracking:
         
         assert facts[0].timestamp == timestamp
         assert facts[0].effective_timestamp == timestamp  # Default
+
+
+class TestConfidenceFiltering:
+    """Test confidence-based filtering in extract_with_confidence().
+
+    Covers Task 2 known issue: confidence filtering was previously a no-op stub.
+    """
+
+    @staticmethod
+    def _mixed_confidence_response():
+        return [
+            {
+                "criterion_type": "min_cgpa",
+                "operator": "gte",
+                "value": "7.5",
+                "scope": "ALL",
+                "confidence": "high",
+                "is_correction": False,
+                "supersedes_ref": None,
+                "notes": "",
+            },
+            {
+                "criterion_type": "max_backlogs",
+                "operator": "eq",
+                "value": "0",
+                "scope": "ALL",
+                "confidence": "medium",
+                "is_correction": False,
+                "supersedes_ref": None,
+                "notes": "",
+            },
+            {
+                "criterion_type": "min_tenth_pct",
+                "operator": "gte",
+                "value": "60",
+                "scope": "ALL",
+                "confidence": "low",
+                "is_correction": False,
+                "supersedes_ref": None,
+                "notes": "Ambiguous requirement",
+            },
+        ]
+
+    def test_default_threshold_accepts_high_and_medium(self):
+        """Default min_confidence='medium' accepts high and medium, rejects low."""
+        mock_llm = MockLLMClient(response_data=self._mixed_confidence_response())
+
+        accepted, low_conf = extract_with_confidence(
+            notice_text="Some notice",
+            source_id="conf_001",
+            source_type=SourceType.PLACEMENT_CELL_EMAIL,
+            timestamp=datetime(2026, 10, 26, 10, 0, 0),
+            drive_id="drive_001",
+            llm_client=mock_llm,
+        )
+
+        assert len(accepted) == 2
+        assert {f.criterion_type for f in accepted} == {"min_cgpa", "max_backlogs"}
+        assert len(low_conf) == 1
+        assert low_conf[0]["criterion_type"] == "min_tenth_pct"
+        assert low_conf[0]["confidence"] == "low"
+
+    def test_high_threshold_rejects_medium_and_low(self):
+        """min_confidence='high' accepts only high-confidence facts."""
+        mock_llm = MockLLMClient(response_data=self._mixed_confidence_response())
+
+        accepted, low_conf = extract_with_confidence(
+            notice_text="Some notice",
+            source_id="conf_002",
+            source_type=SourceType.PLACEMENT_CELL_EMAIL,
+            timestamp=datetime(2026, 10, 26, 10, 0, 0),
+            drive_id="drive_001",
+            llm_client=mock_llm,
+            min_confidence="high",
+        )
+
+        assert len(accepted) == 1
+        assert accepted[0].criterion_type == "min_cgpa"
+        assert len(low_conf) == 2
+        assert {item["criterion_type"] for item in low_conf} == {
+            "max_backlogs",
+            "min_tenth_pct",
+        }
+
+    def test_low_threshold_accepts_all(self):
+        """min_confidence='low' accepts all facts; no low-confidence items."""
+        mock_llm = MockLLMClient(response_data=self._mixed_confidence_response())
+
+        accepted, low_conf = extract_with_confidence(
+            notice_text="Some notice",
+            source_id="conf_003",
+            source_type=SourceType.PLACEMENT_CELL_EMAIL,
+            timestamp=datetime(2026, 10, 26, 10, 0, 0),
+            drive_id="drive_001",
+            llm_client=mock_llm,
+            min_confidence="low",
+        )
+
+        assert len(accepted) == 3
+        assert len(low_conf) == 0
+
+    def test_low_confidence_items_are_descriptive(self):
+        """Low-confidence review items carry criterion details and a reason."""
+        mock_llm = MockLLMClient(response_data=self._mixed_confidence_response())
+
+        _, low_conf = extract_with_confidence(
+            notice_text="Some notice",
+            source_id="conf_004",
+            source_type=SourceType.PLACEMENT_CELL_EMAIL,
+            timestamp=datetime(2026, 10, 26, 10, 0, 0),
+            drive_id="drive_001",
+            llm_client=mock_llm,
+        )
+
+        item = low_conf[0]
+        assert set(item.keys()) >= {
+            "criterion_type",
+            "operator",
+            "value",
+            "scope",
+            "confidence",
+            "notes",
+            "reason",
+        }
+        assert item["notes"] == "Ambiguous requirement"
+        assert "below the minimum threshold" in item["reason"]
+
+    def test_missing_confidence_defaults_to_high(self):
+        """Items omitting confidence default to high and are accepted at medium threshold."""
+        mock_response = [
+            {"criterion_type": "min_cgpa", "operator": "gte", "value": "7.5"},
+        ]
+        mock_llm = MockLLMClient(response_data=mock_response)
+
+        accepted, low_conf = extract_with_confidence(
+            notice_text="Some notice",
+            source_id="conf_005",
+            source_type=SourceType.PLACEMENT_CELL_EMAIL,
+            timestamp=datetime(2026, 10, 26, 10, 0, 0),
+            drive_id="drive_001",
+            llm_client=mock_llm,
+        )
+
+        assert len(accepted) == 1
+        assert len(low_conf) == 0
